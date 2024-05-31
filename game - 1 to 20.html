@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Numbers Game</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #e9ecef;
+            color: #212529;
+            overflow: hidden; /* Prevent scroll */
+        }
+        #game-container, #settings-container, #countdown-container, #level-complete-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+        #timer, #message {
+            margin: 12px;
+        }
+        #grid {
+            display: grid;
+            grid-gap: 10px;
+            width: 90%;
+            max-width: 600px;
+            margin: 20px 0;
+            position: relative;
+        }
+        .card {
+            width: 100%;
+            padding-top: 100%; /* Makes the card square */
+            position: relative;
+            background-color: #f8f9fa;
+            border: 2px solid #2b208d; /* Darker blue-purple */
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2vw; /* Responsive font size */
+            cursor: pointer;
+            transition: transform 0.2s;
+            box-sizing: border-box;
+            color: #2b208d; /* Darker blue-purple */
+        }
+        .card span {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .card:hover {
+            transform: scale(1.1);
+        }
+        .hidden {
+            visibility: hidden;
+        }
+        .correct {
+            background-color: #6bd684; /* Bright green */
+        }
+        .incorrect {
+            background-color: #1a49af; /* Bright red */
+        }
+        #buttons {
+            display: flex;
+            gap: 10px;
+        }
+        #message {
+            display: none;
+            font-size: 24px;
+        }
+        .emoji {
+            position: absolute;
+            font-size: 32px;
+            animation: popup 1s ease-in-out;
+        }
+        @keyframes popup {
+            0%, 100% {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            50% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        button {
+            background-color: #2b208d; /* Darker blue-purple */
+            color: #ffffff;
+            border: none;
+            padding: 10px 20px;
+            font-size: 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #4b0082; /* Even darker blue-purple */
+        }
+        #settings {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        #settings label {
+            margin: 5px 0;
+        }
+        #settings input {
+            padding: 5px;
+            font-size: 16px;
+        }
+        #countdown {
+            font-size: 5rem;
+            font-weight: bold;
+            color: #2b208d;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div id="settings-container">
+    <div id="settings">
+        <label for="level">Choose Level (1 to 10): </label>
+        <input type="number" id="level" name="level" min="1" max="10" value="1">
+        <label for="num-cards">Number of Cards (10 to 50): </label>
+        <input type="number" id="num-cards" name="num-cards" min="10" max="50" value="20">
+    </div>
+    <div id="buttons">
+        <button onclick="startDemo()">Demo</button>
+        <button onclick="prepareGame()">Play</button>
+    </div>
+</div>
+
+<div id="game-container">
+    <div id="timer">Time: 0s</div>
+    <div id="grid"></div>
+    <div id="game-buttons">
+        <button onclick="prepareRestart()">Restart</button>
+        <button onclick="showHomePage()">Back to Home</button>
+    </div>
+    <div id="message"></div>
+</div>
+
+<div id="level-complete-container">
+    <div id="level-complete-message"></div>
+    <div id="level-complete-buttons">
+        <button onclick="nextLevel()">Next Level</button>
+        <button onclick="prepareRestart()">Play Again</button>
+        <button onclick="showHomePage()">Back to Home</button>
+    </div>
+</div>
+
+<div id="countdown-container">
+    <div id="countdown"></div>
+</div>
+
+<script>
+    let numbers = [];
+    let shuffledNumbers = [];
+    let startTime, timerInterval, gameTimeout;
+    let currentNumber = 1;
+    let attempts = 0;
+    let correctAttempts = 0;
+    let demoInterval;
+    let isDemoRunning = false;
+    let level = 1;
+    let numCards = 20;
+    let gameEnded = false;
+    const shuffleThresholds = { 1: 1000, 2: 20, 3: 20, 4: 20, 5: 10, 6: 10, 7: 8, 8: 8, 9: 5, 10: 5 };
+    const timeLimits = { 1: 60, 2: 30, 3: 24, 4: 20, 5: 18, 6: 15, 7: 12, 8: 10, 9: 9, 10: 7 };
+
+    function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+    }
+
+    function createCard(number) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `<span>${number}</span>`;
+        card.onclick = () => handleCardClick(card, number);
+        return card;
+    }
+
+    function handleCardClick(card, number) {
+        if (isDemoRunning || gameEnded) return; // Ignore clicks during demo or if game ended
+
+        attempts++;
+        if (number === currentNumber) {
+            correctAttempts++;
+            card.classList.add('correct');
+            setTimeout(() => card.classList.add('hidden'), 200);
+            currentNumber++;
+            showEmoji(card);
+            if (currentNumber > numCards) {
+                endGame(true);
+            } else if (correctAttempts % shuffleThresholds[level] === 0) {
+                reshuffleCards();
+            }
+        } else {
+            card.classList.add('incorrect');
+            setTimeout(() => card.classList.remove('incorrect'), 200);
+        }
+    }
+
+    function showEmoji(card) {
+        const emoji = document.createElement('div');
+        emoji.className = 'emoji';
+        emoji.innerText = '😊';
+        document.body.appendChild(emoji);
+        const rect = card.getBoundingClientRect();
+        emoji.style.left = `${rect.left + window.scrollX + rect.width / 2}px`;
+        emoji.style.top = `${rect.top + window.scrollY - 32}px`;
+        setTimeout(() => document.body.removeChild(emoji), 1000);
+    }
+
+    function reshuffleCards() {
+        const grid = document.getElementById('grid');
+        const remainingCards = Array.from(grid.getElementsByClassName('card')).filter(card => !card.classList.contains('hidden'));
+        remainingCards.forEach(card => {
+            const randomIndex = Math.floor(Math.random() * grid.children.length);
+            grid.insertBefore(card, grid.children[randomIndex]);
+        });
+    }
+
+    function prepareGame() {
+        level = parseInt(document.getElementById('level').value);
+        document.getElementById('settings-container').style.display = 'none';
+        document.getElementById('countdown-container').style.display = 'flex';
+        let countdownElement = document.getElementById('countdown');
+        countdownElement.innerText = `Time: ${timeLimits[level]}s`;
+        setTimeout(() => {
+            let count = 3;
+            let countdownInterval = setInterval(() => {
+                countdownElement.innerText = count > 0 ? count.toString() : 'Start!';
+                count--;
+                if (count < -1) {
+                    clearInterval(countdownInterval);
+                    document.getElementById('countdown-container').style.display = 'none';
+                    startGame();
+                }
+            }, 1000);
+        }, 1000);
+    }
+
+    function startGame() {
+        stopDemo(); // Ensure the demo stops
+        gameEnded = false;
+        level = parseInt(document.getElementById('level').value);
+        numCards = parseInt(document.getElementById('num-cards').value);
+        numbers = Array.from({ length: numCards }, (_, i) => i + 1);
+        shuffledNumbers = shuffle([...numbers]);
+        const grid = document.getElementById('grid');
+        grid.innerHTML = '';
+
+        // Dynamically set the number of columns
+        const numCols = Math.ceil(Math.sqrt(numCards));
+        grid.style.gridTemplateColumns = `repeat(${numCols}, 1fr)`;
+
+        shuffledNumbers.forEach(number => grid.appendChild(createCard(number)));
+        currentNumber = 1;
+        attempts = 0;
+        correctAttempts = 0;
+        document.getElementById('game-container').style.display = 'flex';
+        document.getElementById('message').style.display = 'none';
+        startTime = Date.now();
+        timerInterval = setInterval(updateTimer, 100);
+
+        // Set game timeout
+        clearTimeout(gameTimeout);
+        if (timeLimits[level] !== Infinity) {
+            gameTimeout = setTimeout(() => endGame(false), timeLimits[level] * 1000);
+        }
+    }
+
+    function prepareRestart() {
+        document.getElementById('countdown-container').style.display = 'flex';
+        let countdownElement = document.getElementById('countdown');
+        let count = 3;
+        let countdownInterval = setInterval(() => {
+            countdownElement.innerText = count > 0 ? count.toString() : 'Start!';
+            count--;
+            if (count < -1) {
+                clearInterval(countdownInterval);
+                document.getElementById('countdown-container').style.display = 'none';
+                restartGame();
+            }
+        }, 1000);
+    }
+
+    function updateTimer() {
+        const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
+        document.getElementById('timer').innerText = `Time: ${elapsedTime}s`;
+    }
+
+    function endGame(success) {
+        clearInterval(timerInterval);
+        clearTimeout(gameTimeout);
+        gameEnded = true;
+
+        if (success) {
+            const message = level === 10 ? `Amazing! Well done! You've completed all levels.` : `Well done! You've completed level ${level}.`;
+            document.getElementById('level-complete-message').innerText = message;
+            document.getElementById('level-complete-container').style.display = 'flex';
+            document.getElementById('game-container').style.display = 'none';
+        } else {
+            const message = `Time's up!`;
+            document.getElementById('message').innerText = message;
+            document.getElementById('message').style.display = 'block';
+            document.getElementById('game-buttons').style.display = 'flex';
+        }
+    }
+
+    function nextLevel() {
+        level++;
+        if (level > 10) {
+            level = 10; // Ensure level does not exceed 10
+        }
+        document.getElementById('level').value = level;
+        document.getElementById('level-complete-container').style.display = 'none';
+        prepareGame();
+    }
+
+    function restartGame() {
+        stopDemo(); // Ensure the demo stops
+        clearInterval(timerInterval);
+        clearTimeout(gameTimeout);
+        startGame();
+    }
+
+    function startDemo() {
+        stopDemo(); // Stop any existing demo
+        clearInterval(timerInterval); // Stop game timer if demo starts
+        level = parseInt(document.getElementById('level').value);
+        numCards = parseInt(document.getElementById('num-cards').value);
+        numbers = Array.from({ length: numCards }, (_, i) => i + 1);
+        shuffledNumbers = shuffle([...numbers]);
+        const grid = document.getElementById('grid');
+        grid.innerHTML = '';
+
+        // Dynamically set the number of columns
+        const numCols = Math.ceil(Math.sqrt(numCards));
+        grid.style.gridTemplateColumns = `repeat(${numCols}, 1fr)`;
+
+        shuffledNumbers.forEach(number => grid.appendChild(createCard(number)));
+        currentNumber = 1;
+        attempts = 0;
+        correctAttempts = 0;
+        document.getElementById('game-container').style.display = 'flex';
+        document.getElementById('message').style.display = 'none';
+        document.getElementById('settings-container').style.display = 'none';
+        isDemoRunning = true;
+        runDemo();
+    }
+
+    function runDemo() {
+        const grid = document.getElementById('grid');
+        const cards = Array.from(grid.getElementsByClassName('card'));
+        cards.sort((a, b) => parseInt(a.innerText) - parseInt(b.innerText));
+        let currentIndex = 0;
+
+        function highlightNextCard() {
+            if (!isDemoRunning) return; // Stop demo if flag is false
+            if (currentIndex < cards.length) {
+                const card = cards[currentIndex];
+                card.classList.add('correct');
+                setTimeout(() => {
+                    card.classList.remove('correct');
+                    card.classList.add('hidden');
+                    currentIndex++;
+                    highlightNextCard();
+                }, 500);
+            } else {
+                stopDemo();
+                showHomePage();
+            }
+        }
+
+        highlightNextCard();
+    }
+
+    function stopDemo() {
+        isDemoRunning = false;
+        clearInterval(demoInterval);
+    }
+
+    function showHomePage() {
+        document.getElementById('game-container').style.display = 'none';
+        document.getElementById('settings-container').style.display = 'flex';
+        document.getElementById('level-complete-container').style.display = 'none';
+    }
+
+    document.getElementById('settings-container').style.display = 'flex'; // Show settings on page load
+</script>
+
+</body>
+</html>
